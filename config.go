@@ -51,6 +51,7 @@ func MakeConfig(svc *sheets.Service, spreadsheetID string, opts ...ConfigOption)
 type ConfigOption func(*config)
 
 // WithContext sets the given context for the Config.
+// This context will be used for all API calls, and cancellation will be respected during iteration.
 func WithContext(ctx context.Context) ConfigOption {
 	return func(c *config) {
 		c.ctx = ctx
@@ -64,7 +65,7 @@ func WithSpreadsheetID(id string) ConfigOption {
 	}
 }
 
-// WithSheetName sets the sheet-name  for the Config.
+// WithSheetName sets the sheet-name for the Config.
 func WithSheetName(name string) ConfigOption {
 	return func(c *config) {
 		c.sheetName = name
@@ -80,7 +81,7 @@ func WithTagName(name string) ConfigOption {
 	}
 }
 
-// WithDatetimeFormats allows to define additional date-time formats to be recognized.
+// WithDatetimeFormats allows to define additional date-time formats to be recognized during the parsing.
 func WithDatetimeFormats(formats ...string) ConfigOption {
 	return func(c *config) {
 		c.datetimeFormats = formats

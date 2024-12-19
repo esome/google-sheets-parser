@@ -63,9 +63,8 @@ func parseSheet[T any](cfg Config, opts []ConfigOption) (iter.Seq2[int, Result[T
 
 	fillEmptyValues(resp)
 
+	ctx := cfg.Context()
 	return func(yield func(int, Result[T]) bool) {
-		ctx := cfg.Context()
-
 	rows:
 		for i, row := range resp.Values[1:] {
 			select {
@@ -78,7 +77,12 @@ func parseSheet[T any](cfg Config, opts []ConfigOption) (iter.Seq2[int, Result[T
 				for _, mapping := range mappings {
 					val, nonEmpty, err := mapping.convert(row[mapping.colIndex].(string), cfg.datetimeFormats)
 					if err != nil {
-						err = fmt.Errorf("%s: %s%d: %w", cfg.sheetName, columnName(mapping.colIndex), rowIdx, err)
+						err = &MappingError{
+							Sheet: cfg.sheetName,
+							Cell:  fmt.Sprintf("%s%d", columnName(mapping.colIndex), rowIdx),
+							Field: mapping.typeName + "." + mapping.field.Name,
+							err:   err,
+						}
 						if !yield(rowIdx, Result[T]{Err: err}) {
 							return
 						}
@@ -102,7 +106,7 @@ func parseSheet[T any](cfg Config, opts []ConfigOption) (iter.Seq2[int, Result[T
 				}
 			}
 		}
-	}, len(resp.Values[1:]), nil
+	}, len(resp.Values[1:]), ctx.Err()
 }
 
 func fillEmptyValues(data *sheets.ValueRange) {

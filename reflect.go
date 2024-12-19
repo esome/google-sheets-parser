@@ -17,6 +17,7 @@ type mapping struct {
 	initEmbedPtr func(reflect.Value)
 	colIndex     int
 	colName      string
+	typeName     string
 	err          error
 }
 
@@ -75,6 +76,12 @@ func createMappings(t reflect.Type, captions []any, opts Config) ([]*mapping, er
 
 func readTags(tagName string, t reflect.Type, index []int, parentInit func(reflect.Value)) []*mapping {
 	out := make([]*mapping, 0, t.NumField())
+	typeName := t.PkgPath()
+	if typeName != "" {
+		typeName += "/"
+	}
+	typeName += t.Name()
+
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
@@ -86,6 +93,7 @@ func readTags(tagName string, t reflect.Type, index []int, parentInit func(refle
 			field:        f,
 			colName:      f.Name,
 			colIndex:     -1,
+			typeName:     typeName,
 			initEmbedPtr: parentInit,
 		}
 
@@ -141,70 +149,70 @@ func readTags(tagName string, t reflect.Type, index []int, parentInit func(refle
 			m.convert = convertInt
 		case reflect.Int8:
 			if isPointer {
-				m.convert = makeConvertIntxP[int8](8)
+				m.convert = makeConvertIntxP[int8](8, reflect.Int8)
 				break
 			}
-			m.convert = makeConvertIntx[int8](8)
+			m.convert = makeConvertIntx[int8](8, reflect.Int8)
 		case reflect.Int16:
 			if isPointer {
-				m.convert = makeConvertIntxP[int16](16)
+				m.convert = makeConvertIntxP[int16](16, reflect.Int16)
 				break
 			}
-			m.convert = makeConvertIntx[int16](16)
+			m.convert = makeConvertIntx[int16](16, reflect.Int16)
 		case reflect.Int32:
 			if isPointer {
-				m.convert = makeConvertIntxP[int32](32)
+				m.convert = makeConvertIntxP[int32](32, reflect.Int32)
 				break
 			}
-			m.convert = makeConvertIntx[int32](32)
+			m.convert = makeConvertIntx[int32](32, reflect.Int32)
 		case reflect.Int64:
 			if isPointer {
-				m.convert = makeConvertIntxP[int64](64)
+				m.convert = makeConvertIntxP[int64](64, reflect.Int64)
 				break
 			}
-			m.convert = makeConvertIntx[int64](64)
+			m.convert = makeConvertIntx[int64](64, reflect.Int64)
 		case reflect.Uint:
 			if isPointer {
-				m.convert = makeConvertUintP[uint](0)
+				m.convert = makeConvertUintP[uint](0, reflect.Uint)
 				break
 			}
-			m.convert = makeConvertUint[uint](0)
+			m.convert = makeConvertUint[uint](0, reflect.Uint)
 		case reflect.Uint8:
 			if isPointer {
-				m.convert = makeConvertUintP[uint8](8)
+				m.convert = makeConvertUintP[uint8](8, reflect.Uint8)
 				break
 			}
-			m.convert = makeConvertUint[uint8](8)
+			m.convert = makeConvertUint[uint8](8, reflect.Uint8)
 		case reflect.Uint16:
 			if isPointer {
-				m.convert = makeConvertUintP[uint16](16)
+				m.convert = makeConvertUintP[uint16](16, reflect.Uint16)
 				break
 			}
-			m.convert = makeConvertUint[uint16](16)
+			m.convert = makeConvertUint[uint16](16, reflect.Uint16)
 		case reflect.Uint32:
 			if isPointer {
-				m.convert = makeConvertUintP[uint32](32)
+				m.convert = makeConvertUintP[uint32](32, reflect.Uint32)
 				break
 			}
-			m.convert = makeConvertUint[uint32](32)
+			m.convert = makeConvertUint[uint32](32, reflect.Uint32)
 		case reflect.Uint64:
 			if isPointer {
-				m.convert = makeConvertUintP[uint64](64)
+				m.convert = makeConvertUintP[uint64](64, reflect.Uint64)
 				break
 			}
-			m.convert = makeConvertUint[uint64](64)
+			m.convert = makeConvertUint[uint64](64, reflect.Uint64)
 		case reflect.Float32:
 			if isPointer {
-				m.convert = makeConvertFloatP[float32](32)
+				m.convert = makeConvertFloatP[float32](32, reflect.Float32)
 				break
 			}
-			m.convert = makeConvertFloat[float32](32)
+			m.convert = makeConvertFloat[float32](32, reflect.Float32)
 		case reflect.Float64:
 			if isPointer {
-				m.convert = makeConvertFloatP[float64](64)
+				m.convert = makeConvertFloatP[float64](64, reflect.Float64)
 				break
 			}
-			m.convert = makeConvertFloat[float64](64)
+			m.convert = makeConvertFloat[float64](64, reflect.Float64)
 		case reflect.Bool:
 			if isPointer {
 				m.convert = convertBoolP
@@ -256,7 +264,7 @@ func convertStringP(cv string, _ []string) (reflect.Value, bool, error) {
 func convertInt(cv string, _ []string) (reflect.Value, bool, error) {
 	i, err := strconv.Atoi(cv)
 	if err != nil {
-		return errVal, false, err
+		return errVal, false, &ConvertError{reflect.Int, cv, err}
 	}
 	return reflect.ValueOf(i), true, nil
 }
@@ -264,74 +272,71 @@ func convertInt(cv string, _ []string) (reflect.Value, bool, error) {
 func convertIntP(cv string, _ []string) (reflect.Value, bool, error) {
 	i, err := strconv.Atoi(cv)
 	if err != nil {
-		return errVal, false, err
+		return errVal, false, &ConvertError{reflect.Int, cv, err}
 	}
 	return reflect.ValueOf(&i), true, nil
 }
 
-func makeConvertIntx[T int8 | int16 | int32 | int64](bitSize int) convertFunc {
-	var emptyT T
+func makeConvertIntx[T int8 | int16 | int32 | int64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		i, err := strconv.ParseInt(cv, 10, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(i)
-		return reflect.ValueOf(v), v != emptyT, nil
+		return reflect.ValueOf(v), true, nil
 	}
 }
 
-func makeConvertIntxP[T int8 | int16 | int32 | int64](bitSize int) convertFunc {
+func makeConvertIntxP[T int8 | int16 | int32 | int64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		i, err := strconv.ParseInt(cv, 10, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(i)
 		return reflect.ValueOf(&v), true, nil
 	}
 }
 
-func makeConvertUint[T uint | uint8 | uint16 | uint32 | uint64](bitSize int) convertFunc {
-	var emptyT T
+func makeConvertUint[T uint | uint8 | uint16 | uint32 | uint64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		i, err := strconv.ParseUint(cv, 10, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(i)
-		return reflect.ValueOf(v), v != emptyT, nil
+		return reflect.ValueOf(v), true, nil
 	}
 }
 
-func makeConvertUintP[T uint | uint8 | uint16 | uint32 | uint64](bitSize int) convertFunc {
+func makeConvertUintP[T uint | uint8 | uint16 | uint32 | uint64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		i, err := strconv.ParseUint(cv, 10, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(i)
 		return reflect.ValueOf(&v), true, nil
 	}
 }
 
-func makeConvertFloat[T float32 | float64](bitSize int) convertFunc {
-	var emptyT T
+func makeConvertFloat[T float32 | float64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		f, err := strconv.ParseFloat(cv, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(f)
-		return reflect.ValueOf(v), v != emptyT, nil
+		return reflect.ValueOf(v), true, nil
 	}
 }
 
-func makeConvertFloatP[T float32 | float64](bitSize int) convertFunc {
+func makeConvertFloatP[T float32 | float64](bitSize int, kind reflect.Kind) convertFunc {
 	return func(cv string, _ []string) (reflect.Value, bool, error) {
 		f, err := strconv.ParseFloat(cv, bitSize)
 		if err != nil {
-			return errVal, false, err
+			return errVal, false, &ConvertError{kind, cv, err}
 		}
 		v := T(f)
 		return reflect.ValueOf(&v), true, nil
@@ -341,15 +346,15 @@ func makeConvertFloatP[T float32 | float64](bitSize int) convertFunc {
 func convertBool(cv string, _ []string) (reflect.Value, bool, error) {
 	b, err := strconv.ParseBool(cv)
 	if err != nil {
-		return errVal, false, err
+		return errVal, false, &ConvertError{reflect.Bool, cv, err}
 	}
-	return reflect.ValueOf(b), b, nil
+	return reflect.ValueOf(b), true, nil
 }
 
 func convertBoolP(cv string, _ []string) (reflect.Value, bool, error) {
 	b, err := strconv.ParseBool(cv)
 	if err != nil {
-		return errVal, false, err
+		return errVal, false, &ConvertError{reflect.Bool, cv, err}
 	}
 	return reflect.ValueOf(&b), true, nil
 }
@@ -361,7 +366,7 @@ func parseTime(cv string, dateTimeFormats []string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("%w: %s", ErrInvalidDateTimeFormat, cv)
+	return time.Time{}, &InvalidDateTimeFormatError{CV: cv, Formats: dateTimeFormats}
 }
 
 func convertTime(cv string, dateTimeFormats []string) (reflect.Value, bool, error) {
@@ -369,7 +374,7 @@ func convertTime(cv string, dateTimeFormats []string) (reflect.Value, bool, erro
 	if err != nil {
 		return errVal, false, err
 	}
-	return reflect.ValueOf(t), !t.IsZero(), nil
+	return reflect.ValueOf(t), true, nil
 }
 
 func convertTimeP(cv string, dateTimeFormats []string) (reflect.Value, bool, error) {
@@ -377,5 +382,5 @@ func convertTimeP(cv string, dateTimeFormats []string) (reflect.Value, bool, err
 	if err != nil {
 		return errVal, false, err
 	}
-	return reflect.ValueOf(&t), !t.IsZero(), nil
+	return reflect.ValueOf(&t), true, nil
 }
