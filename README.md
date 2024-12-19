@@ -1,6 +1,6 @@
 # Google Sheets Parser
 
-`google-sheets-parser` is a library for dynamically parsing Google Sheets into Golang structs.
+Google Sheets Parser is a library for dynamically parsing Google Sheets into Golang structs.
 
 ## Installation
 
@@ -30,22 +30,23 @@ type User struct {
 	CreatedAt *time.Time `gsheets:"Created At"` // <- Custom Column Name, optional, will be prioritized over the Struct Field Name
 }
 
-// Acutal usage of the Library
+// Actual usage of the Library
 users, err := gsheets.ParseSheetIntoStructSlice[User](
 	context.Background(), 
 	// minimal Config only containing the Google Sheets service (*sheets.Service)
+	// Have a look in the example to learn how to create a reusable configuration 
 	gsheets.Config{Service: svc},
 	// Mandatory! you must define the SpreadsheetID, or an error will be returned
-	gsheets.WithSpreadsheetID( "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"),
+	gsheets.WithSpreadsheetID("15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"),
 	// Optional: you can pass an arbitrary amount of ConfigOptions for further customization for this call
-    gsheets.WithDatetimeFormats:() // <- in this case we provide further Datetime Formats to be recognized 
-        "2.1.2006",
-        "02.01.2006",
-        "02.01.2006 15:04:05",
-    },
+	gsheets.WithDatetimeFormats( // <- in this case we provide further Datetime Formats to be recognized 
+		"2.1.2006",
+		"02.01.2006",
+		"02.01.2006 15:04:05",
+	),
 ) 
 if err != nil {
-    log.Fatalf("Unable to parse page: %v", err)
+	log.Fatalf("Unable to parse page: %v", err)
 }
 
 // Do anything you want with the result
@@ -79,6 +80,10 @@ Golang structs, which then can be written to the databases.
 
 This library was originally a fork of the [awesome work from Tobias Wimmer](https://github.com/Tobi696/googlesheetsparser).
 All credits go to him for the initial implementation. Please consider checking out his repository as well, and support him.
+
+Since the way the library is configured has changed significantly, we decided to create a complete separate/independent
+repository for it. This also allows us to maintain the library in a way that fits our needs better, and accept/make
+contributions that may have been rejected in the original project. 
 
 
 ## Contributing
