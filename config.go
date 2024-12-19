@@ -1,11 +1,15 @@
 package gsheets
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/gertd/go-pluralize"
 	"google.golang.org/api/sheets/v4"
 )
+
+// defaultTag is the default tag-name to be looked at in the structs.
+const defaultTag = "gsheets"
 
 // Config holds the configuration for the Google Sheets parser.
 type Config struct {
@@ -21,6 +25,7 @@ type config struct {
 	allowSkipFields  bool
 	allowSkipColumns bool
 	built            bool
+	ctx              context.Context
 	fetch            fetchFN
 }
 
@@ -28,7 +33,7 @@ type config struct {
 func MakeConfig(svc *sheets.Service, spreadsheetID string, opts ...ConfigOption) Config {
 	cfg := &config{
 		spreadsheetID: spreadsheetID,
-		tagName:       "gsheets",
+		tagName:       defaultTag,
 		fetch:         fetchViaGoogleAPI,
 	}
 
@@ -44,6 +49,13 @@ func MakeConfig(svc *sheets.Service, spreadsheetID string, opts ...ConfigOption)
 
 // ConfigOption is a function allows to modify a Config.
 type ConfigOption func(*config)
+
+// WithContext sets the given context for the Config.
+func WithContext(ctx context.Context) ConfigOption {
+	return func(c *config) {
+		c.ctx = ctx
+	}
+}
 
 // WithSpreadsheetID sets the spreadsheet ID for the Config.
 func WithSpreadsheetID(id string) ConfigOption {
@@ -122,7 +134,7 @@ func (c Config) init(ref reflect.Type, opts []ConfigOption) (Config, error) {
 		c.fetch = fetchViaGoogleAPI
 	}
 	if c.tagName == "" {
-		c.tagName = "gsheets"
+		c.tagName = defaultTag
 	}
 	if c.sheetName == "" {
 		c.sheetName = pluralizeClient.Plural(ref.Name())
@@ -132,6 +144,15 @@ func (c Config) init(ref reflect.Type, opts []ConfigOption) (Config, error) {
 
 	c.built = true
 	return c, nil
+}
+
+// Context returns the configured context, or creates a new background context
+func (c *config) Context() context.Context {
+	if c.ctx == nil {
+		c.ctx = context.Background()
+	}
+
+	return c.ctx
 }
 
 var pluralizeClient = pluralize.NewClient()

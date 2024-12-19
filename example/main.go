@@ -95,6 +95,7 @@ func recommended(ctx context.Context, svc *sheets.Service) {
 	// These options can still be overridden when calling the ParseSheetIntoStructSlice/ParseSheetIntoStructs functions
 	// The config can still be reused for multiple calls. Options passed to the parsing functions will not taint the config.
 	cfg := gsheets.MakeConfig(svc, spreadsheetID,
+		gsheets.WithContext(ctx), // <- this context will be used for all API calls made with this config
 		gsheets.WithDatetimeFormats(
 			"2.1.2006",
 			"02.01.2006",
@@ -102,7 +103,7 @@ func recommended(ctx context.Context, svc *sheets.Service) {
 		))
 
 	// Parse the sheet into a slice of structs
-	users, err := gsheets.ParseSheetIntoStructSlice[Workout](ctx, cfg)
+	users, err := gsheets.ParseSheetIntoStructSlice[Workout](cfg)
 	if err != nil {
 		log.Fatalf("Unable to parse page: %v", err)
 	}
@@ -111,10 +112,12 @@ func recommended(ctx context.Context, svc *sheets.Service) {
 	fmt.Println(users)
 }
 
-// oneTimeConfig demonstrates the idiomatic usage of the Library
+// oneTimeConfig demonstrates the minimal usage for one time calls
 func oneTimeConfig(ctx context.Context, svc *sheets.Service) {
 	// Parse the sheet into a slice of structs
-	users, err := gsheets.ParseSheetIntoStructSlice[Workout](ctx, gsheets.Config{Service: svc},
+	users, err := gsheets.ParseSheetIntoStructSlice[Workout](
+		gsheets.Config{Service: svc},
+		gsheets.WithContext(ctx),
 		gsheets.WithSpreadsheetID(spreadsheetID),
 		gsheets.WithDatetimeFormats(
 			"2.1.2006",

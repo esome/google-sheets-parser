@@ -1,24 +1,12 @@
 package gsheets
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"iter"
-	"log"
 	"reflect"
 	"strings"
 
 	"google.golang.org/api/sheets/v4"
-)
-
-var (
-	ErrNoService             = errors.New("gsheets: no Google API service  provided")
-	ErrNoSpreadSheetID       = errors.New("gsheets: no spreadsheet id provided")
-	ErrUnsupportedType       = errors.New("gsheets: unsupported type")
-	ErrFieldNotFoundInSheet  = errors.New("gsheets: field not found in sheet")
-	ErrFieldNotFoundInStruct = errors.New("gsheets: field not found in struct")
-	ErrInvalidDateTimeFormat = errors.New("gsheets: invalid datetime format")
 )
 
 // Result is a struct that holds the result of a parsing operation.
@@ -29,17 +17,18 @@ type Result[T any] struct {
 }
 
 // ParseSheetIntoStructs parses a sheet page and returns an iterator over the parsing Result.
-// If an error occurs during validation or when fetching data, the function will return an error.
+// If an error occurs during validation or when fetching data, the function will return it.
 // Parsing errors are returned as part of the Result, and can therefore be handled by the caller.
-func ParseSheetIntoStructs[T any](ctx context.Context, cfg Config, opts ...ConfigOption) (iter.Seq2[int, Result[T]], error) {
-	results, _, err := parseSheet[T](ctx, cfg, opts)
+// The iterator will still proceed to the next row, if it isn't stopped.
+func ParseSheetIntoStructs[T any](cfg Config, opts ...ConfigOption) (iter.Seq2[int, Result[T]], error) {
+	results, _, err := parseSheet[T](cfg, opts)
 	return results, err
 }
 
 // ParseSheetIntoStructSlice parses a sheet page and returns a slice of structs with the give type.
-// If an error occurs during parsing, the function will return an error.
-func ParseSheetIntoStructSlice[T any](ctx context.Context, cfg Config, opts ...ConfigOption) ([]T, error) {
-	results, rows, err := parseSheet[T](ctx, cfg, opts)
+// If an error occurs, the function will immediately return it.
+func ParseSheetIntoStructSlice[T any](cfg Config, opts ...ConfigOption) ([]T, error) {
+	results, rows, err := parseSheet[T](cfg, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -52,17 +41,17 @@ func ParseSheetIntoStructSlice[T any](ctx context.Context, cfg Config, opts ...C
 		items = append(items, item.Val)
 	}
 
-	return items, ctx.Err()
+	return items, cfg.Context().Err()
 }
 
-func parseSheet[T any](ctx context.Context, cfg Config, opts []ConfigOption) (iter.Seq2[int, Result[T]], int, error) {
+func parseSheet[T any](cfg Config, opts []ConfigOption) (iter.Seq2[int, Result[T]], int, error) {
 	refT := reflect.TypeFor[T]()
 	cfg, err := cfg.init(refT, opts)
 	if err != nil {
-		log.Println("gsheets: Warning: Using cfg that are not built")
+		return nil, 0, err
 	}
 
-	resp, err := cfg.fetch(ctx, cfg)
+	resp, err := cfg.fetch(cfg)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -75,6 +64,8 @@ func parseSheet[T any](ctx context.Context, cfg Config, opts []ConfigOption) (it
 	fillEmptyValues(resp)
 
 	return func(yield func(int, Result[T]) bool) {
+		ctx := cfg.Context()
+
 	rows:
 		for i, row := range resp.Values[1:] {
 			select {
@@ -140,11 +131,11 @@ func columnName(index int) string {
 	return strings.ToUpper(res)
 }
 
-type fetchFN func(ctx context.Context, cfg Config) (*sheets.ValueRange, error)
+type fetchFN func(cfg Config) (*sheets.ValueRange, error)
 
-func fetchViaGoogleAPI(ctx context.Context, cfg Config) (*sheets.ValueRange, error) {
+func fetchViaGoogleAPI(cfg Config) (*sheets.ValueRange, error) {
 	return cfg.Service.Spreadsheets.Values.Get(cfg.spreadsheetID, cfg.sheetName).
-		Context(ctx).
+		Context(cfg.Context()).
 		MajorDimension("ROWS").
 		Do()
 }

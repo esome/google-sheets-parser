@@ -55,14 +55,19 @@ func createMappings(t reflect.Type, captions []any, opts Config) ([]*mapping, er
 		}
 	}
 
-	// finally we check if there are any columns left, and raise an error if it is not allowed to skip them
+	// here we check if there are any columns left, and raise an error if it's not allowed to skip them
 	if len(colNames) > 0 && !opts.allowSkipColumns {
 		errs := make([]error, 0, len(colNames))
 		// todo: sort by column index
-		for colName := range colNames {
-			errs = append(errs, fmt.Errorf("%w: %q", ErrFieldNotFoundInStruct, colName))
+		for colName, idx := range colNames {
+			errs = append(errs, fmt.Errorf("%w: %q in column %q", ErrFieldNotFoundInStruct, colName, columnName(idx)))
 		}
 		return nil, errors.Join(errs...)
+	}
+
+	// finally we check if there are actually mappings
+	if len(mapped) == 0 {
+		return nil, ErrNoMapping
 	}
 
 	return mapped, nil

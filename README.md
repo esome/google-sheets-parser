@@ -4,7 +4,7 @@ Google Sheets Parser is a library for dynamically parsing Google Sheets into Gol
 
 ## Installation
 
-```bash
+```shell
 go get github.com/esome/google-sheets-parser
 ```
 
@@ -20,7 +20,18 @@ The Image shows the sheet called "Users" which is contained in the example sprea
 To Parse it, we would utilize following code:
 
 ```go
-// Define your structs to be parsed
+package main
+
+import (
+	"fmt"
+	"log"
+	"time"
+	
+	"github.com/esome/google-sheets-parser"
+	"google.golang.org/api/sheets/v4"
+)
+
+// User is a struct that represents a row in the Users Sheet
 type User struct {
 	ID        uint // <- By default, columns will be parsed into the equally named struct fields.
 	Username  string
@@ -30,27 +41,29 @@ type User struct {
 	CreatedAt *time.Time `gsheets:"Created At"` // <- Custom Column Name, optional, will be prioritized over the Struct Field Name
 }
 
-// Actual usage of the Library
-users, err := gsheets.ParseSheetIntoStructSlice[User](
-	context.Background(), 
-	// minimal Config only containing the Google Sheets service (*sheets.Service)
-	// Have a look in the example to learn how to create a reusable configuration 
-	gsheets.Config{Service: svc},
-	// Mandatory! you must define the SpreadsheetID, or an error will be returned
-	gsheets.WithSpreadsheetID("15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"),
-	// Optional: you can pass an arbitrary amount of ConfigOptions for further customization for this call
-	gsheets.WithDatetimeFormats( // <- in this case we provide further Datetime Formats to be recognized 
-		"2.1.2006",
-		"02.01.2006",
-		"02.01.2006 15:04:05",
-	),
-) 
-if err != nil {
-	log.Fatalf("Unable to parse page: %v", err)
-}
+func main() {
+	var svc *sheets.Service // <- You need to create a Google Sheets Service first, see below
+	
+	users, err := gsheets.ParseSheetIntoStructSlice[User](
+		// minimal Config only containing the Google Sheets service (*sheets.Service)
+		// Have a look in the example to learn how to create a reusable configuration 
+		gsheets.Config{Service: svc},
+		// Mandatory! you must define the SpreadsheetID, or an error will be returned
+		gsheets.WithSpreadsheetID("15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"),
+		// Optional: you can pass an arbitrary amount of ConfigOptions for further customization for this call
+		gsheets.WithDatetimeFormats( // <- in this case we provide further Datetime Formats to be recognized 
+			"2.1.2006",
+			"02.01.2006",
+			"02.01.2006 15:04:05",
+		),
+	)
+	if err != nil {
+		log.Fatalf("Unable to parse page: %v", err)
+	}
 
-// Do anything you want with the result
-fmt.Println(users)
+	// Do anything you want with the result
+	fmt.Println(users)
+}
 ```
 
 
