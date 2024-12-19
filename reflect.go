@@ -1,4 +1,4 @@
-package googlesheetsparser
+package gsheets
 
 import (
 	"errors"
@@ -20,7 +20,7 @@ type mapping struct {
 	err          error
 }
 
-func createMappings(t reflect.Type, captions []any, opts Options) ([]*mapping, error) {
+func createMappings(t reflect.Type, captions []any, opts Config) ([]*mapping, error) {
 	if t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, t.Kind().String())
 	}
@@ -36,7 +36,7 @@ func createMappings(t reflect.Type, captions []any, opts Options) ([]*mapping, e
 	}
 
 	// then we read the tags and create the mappings
-	fields := readTags("sheets", t, nil, nil)
+	fields := readTags(opts.tagName, t, nil, nil)
 
 	// next we set the column index for each mapping
 	mapped := make([]*mapping, 0, len(fields))
@@ -50,13 +50,13 @@ func createMappings(t reflect.Type, captions []any, opts Options) ([]*mapping, e
 			delete(colNames, m.colName)
 			continue
 		}
-		if !opts.AllowSkipFields {
+		if !opts.allowSkipFields {
 			return nil, fmt.Errorf("%w: %q", ErrFieldNotFoundInSheet, m.colName)
 		}
 	}
 
 	// finally we check if there are any columns left, and raise an error if it is not allowed to skip them
-	if len(colNames) > 0 && !opts.AllowSkipColumns {
+	if len(colNames) > 0 && !opts.allowSkipColumns {
 		errs := make([]error, 0, len(colNames))
 		// todo: sort by column index
 		for colName := range colNames {
@@ -77,7 +77,7 @@ func readTags(tagName string, t reflect.Type, index []int, parentInit func(refle
 		}
 
 		f.Index = append(slices.Clone(index), f.Index...)
-		m := mapping{
+		m := &mapping{
 			field:        f,
 			colName:      f.Name,
 			colIndex:     -1,
@@ -206,15 +206,12 @@ func readTags(tagName string, t reflect.Type, index []int, parentInit func(refle
 				break
 			}
 			m.convert = convertBool
-
-			reflect.New(field).Elem().IsNil()
-
 		default:
 			m.err = fmt.Errorf("%w: field %q of type %q is unsupported", ErrUnsupportedType, f.Name, field.Kind().String())
 		}
 
 		m.convert = wrapEmpty(f.Type, m.convert)
-		out = append(out, &m)
+		out = append(out, m)
 	}
 
 	return out

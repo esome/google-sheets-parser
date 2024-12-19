@@ -1,16 +1,16 @@
-# googlesheetsparser
+# Google Sheets Parser
 
-googlesheetsparser is a library for dynamically parsing Google Sheets into Golang structs.
+`google-sheets-parser` is a library for dynamically parsing Google Sheets into Golang structs.
 
 ## Installation
 
 ```bash
-go get github.com/Tobi696/googlesheetsparser
+go get github.com/esome/google-sheets-parser
 ```
 
 ### Requirements
 
-This library requires Go >= 1.18 as generics are used.
+This library requires Go >= 1.23 as range over function mechanics are used.
 
 ## Usage
 
@@ -27,21 +27,23 @@ type User struct {
 	Name      string
 	Password  *string
 	Weight    *uint
-	CreatedAt *time.Time `sheets:"Created At"` // <- Custom Column Name, optional, will be prioritized over the Struct Field Name
+	CreatedAt *time.Time `gsheets:"Created At"` // <- Custom Column Name, optional, will be prioritized over the Struct Field Name
 }
 
-
 // Acutal usage of the Library
-users, err := googlesheetsparser.ParseSheetIntoStructSlice[User](googlesheetsparser.Options{
-    Service:       srv, // <- Google Sheets Service (*sheets.Service)
-    SpreadsheetID: "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc",
-    // SheetName: "app-user", <- Optional, by default the library will pluralize the struct name provided as generic, e.g. User -> Users
-    DatetimeFormats: []string{ // <- Optional, here you can provide further Datetime Formats
+users, err := gsheets.ParseSheetIntoStructSlice[User](
+	context.Background(), 
+	// minimal Config only containing the Google Sheets service (*sheets.Service)
+	gsheets.Config{Service: svc},
+	// Mandatory! you must define the SpreadsheetID, or an error will be returned
+	gsheets.WithSpreadsheetID( "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"),
+	// Optional: you can pass an arbitrary amount of ConfigOptions for further customization for this call
+    gsheets.WithDatetimeFormats:() // <- in this case we provide further Datetime Formats to be recognized 
         "2.1.2006",
         "02.01.2006",
         "02.01.2006 15:04:05",
     },
-}.Build()) // <- Don't forget to call Build() on the Options struct you provide
+) 
 if err != nil {
     log.Fatalf("Unable to parse page: %v", err)
 }
@@ -60,29 +62,26 @@ Please refer to the [Google Sheets Go Quickstart](https://developers.google.com/
 
 ### Example
 
-To try out the example yourself, check out the [example/](example/)-Directory.
+To try out the example yourself, check out the [example/](example/)-Directory.  
+In there you will find an example that demonstrates how to create a common config for multiple parse calls.
 
 
 ## Intention
 
 This library is intended to be used as a library for parsing Google Sheets into Golang structs. It is not intended to be used as a library for generating Google Sheets from Golang structs.  
 
-The initial need that this library was created for is for seeding a database with data from a Google Sheets.  
-That's very useful because often people who don't have the knowledge to work directly on Databases want to seed their Applications (Mobile/Desktop or whatever) with data. With this library, these people can enter their seed data into a Google sheet and the Developer only has to seed the Database with the structs that the library parsed for him.
+At esome we use Google Sheets in some cases to communicate data with external partners. The data of these sheets sometimes
+needs to be imported into our data-warehouse. This library helps us to parse the data from the Google Sheets into 
+Golang structs, which then can be written to the databases.  
 
 
-## Future
+## Origin
 
-In the future, this library will be extended with test cases to ensure that the library is working as expected.
-
-When the library has reached a reasonable test coverage, it will be extended to support more types, flexible sheets and other things users would like to see.
+This library was originally a fork of the [awesome work from Tobias Wimmer](https://github.com/Tobi696/googlesheetsparser).
+All credits go to him for the initial implementation. Please consider checking out his repository as well, and support him.
 
 
 ## Contributing
 
 Contributions are welcome! Please open an issue or pull request if you have any suggestions or want to contribute.
 
-
-# Support the development by donating.
-
-[![Donate with PayPal](https://raw.githubusercontent.com/stefan-niedermann/paypal-donate-button/master/paypal-donate-button.png)](https://www.paypal.com/donate/?hosted_button_id=D2W5Z6K3G8TPJ)

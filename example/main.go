@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
-	"github.com/Tobi696/googlesheetsparser"
+	"github.com/esome/google-sheets-parser"
 )
 
 type Workout struct {
@@ -46,7 +47,9 @@ func getService(ctx context.Context) *sheets.Service {
 	if err != nil {
 		log.Fatalf("Unable to read credentials file: %v", err)
 	}
-	defer confFile.Close()
+	defer func() {
+		_ = confFile.Close()
+	}()
 	if err := json.NewDecoder(confFile).Decode(&fileConf); err != nil {
 		log.Fatalf("Unable to parse credentials file: %v", err)
 	}
@@ -69,20 +72,55 @@ func getService(ctx context.Context) *sheets.Service {
 	return srv
 }
 
+// spreadsheetID is the ID of the Google Sheet to be parsed. This is publicly accessible.
+const spreadsheetID = "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc"
+
 func main() {
 	ctx := context.Background()
-	srv := getService(ctx)
+	svc := getService(ctx)
 
-	// Acutal usage of the Library
-	users, err := googlesheetsparser.ParseSheetIntoStructSlice[Workout](ctx, googlesheetsparser.Options{
-		Service:       srv,
-		SpreadsheetID: "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc",
-		DatetimeFormats: []string{
+	useOTC := flag.Bool("one-time-cfg", false, "Run the one-time-config example code")
+	flag.Parse()
+
+	if *useOTC {
+		oneTimeConfig(ctx, svc)
+		return
+	}
+	recommended(ctx, svc)
+}
+
+// recommended demonstrates the idiomatic usage of the Library
+func recommended(ctx context.Context, svc *sheets.Service) {
+	// Create a common Config with the Google Sheets service and the spreadsheet ID, and commonly used options
+	// These options can still be overridden when calling the ParseSheetIntoStructSlice/ParseSheetIntoStructs functions
+	// The config can still be reused for multiple calls. Options passed to the parsing functions will not taint the config.
+	cfg := gsheets.MakeConfig(svc, spreadsheetID,
+		gsheets.WithDatetimeFormats(
 			"2.1.2006",
 			"02.01.2006",
 			"02.01.2006 15:04:05",
-		},
-	}.Build())
+		))
+
+	// Parse the sheet into a slice of structs
+	users, err := gsheets.ParseSheetIntoStructSlice[Workout](ctx, cfg)
+	if err != nil {
+		log.Fatalf("Unable to parse page: %v", err)
+	}
+
+	// Do anything you want with the users
+	fmt.Println(users)
+}
+
+// oneTimeConfig demonstrates the idiomatic usage of the Library
+func oneTimeConfig(ctx context.Context, svc *sheets.Service) {
+	// Parse the sheet into a slice of structs
+	users, err := gsheets.ParseSheetIntoStructSlice[Workout](ctx, gsheets.Config{Service: svc},
+		gsheets.WithSpreadsheetID(spreadsheetID),
+		gsheets.WithDatetimeFormats(
+			"2.1.2006",
+			"02.01.2006",
+			"02.01.2006 15:04:05",
+		))
 	if err != nil {
 		log.Fatalf("Unable to parse page: %v", err)
 	}
