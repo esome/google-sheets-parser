@@ -7,10 +7,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/Tobi696/googlesheetsparser"
 	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/Tobi696/googlesheetsparser"
 )
 
 type Workout struct {
@@ -38,7 +39,7 @@ type jwtConfig struct {
 // getService returns a Google Sheets API service
 // using the credentials in "credentials.json"
 // this code works for Service Accounts only
-func getService() *sheets.Service {
+func getService(ctx context.Context) *sheets.Service {
 	// Authenticating, creating the googlesheets Service
 	var fileConf jwtConfig
 	confFile, err := os.Open("credentials.json")
@@ -60,7 +61,6 @@ func getService() *sheets.Service {
 		},
 	}
 
-	ctx := context.Background()
 	srv, err := sheets.NewService(ctx, option.WithHTTPClient(conf.Client(ctx)))
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
@@ -70,10 +70,11 @@ func getService() *sheets.Service {
 }
 
 func main() {
-	srv := getService()
+	ctx := context.Background()
+	srv := getService(ctx)
 
 	// Acutal usage of the Library
-	users, err := googlesheetsparser.ParseSheetIntoStructSlice[Workout](googlesheetsparser.Options{
+	users, err := googlesheetsparser.ParseSheetIntoStructSlice[Workout](ctx, googlesheetsparser.Options{
 		Service:       srv,
 		SpreadsheetID: "15PTbwnLdGJXb4kgLVVBtZ7HbK3QEj-olOxsY7XTzvCc",
 		DatetimeFormats: []string{

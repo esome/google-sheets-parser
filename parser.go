@@ -1,13 +1,13 @@
 package googlesheetsparser
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"log"
 	"reflect"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gertd/go-pluralize"
 	"google.golang.org/api/sheets/v4"
@@ -19,22 +19,26 @@ var (
 	ErrNoSpreadSheetID       = errors.New("no spreadsheet id provided")
 	ErrNoSheetName           = errors.New("no sheet name provided")
 	ErrUnsupportedType       = errors.New("unsupported type")
+	ErrFieldNotFoundInSheet  = errors.New("field not found in sheet")
 	ErrFieldNotFoundInStruct = errors.New("field not found in struct")
 	ErrInvalidDateTimeFormat = errors.New("invalid datetime format")
 )
 
-var dateTimeFormats = []string{
+var dateTimeFormats = [...]string{
 	"2006-01-02",
 	"2006-01-02 15:04:05",
 	"2006-01-02 15:04:05 -0700",
 }
 
 type Options struct {
-	Service         *sheets.Service
-	SpreadsheetID   string
-	SheetName       string
-	DatetimeFormats []string
+	Service          *sheets.Service
+	SpreadsheetID    string
+	SheetName        string
+	DatetimeFormats  []string
+	AllowSkipFields  bool
+	AllowSkipColumns bool
 
+	fetch fetchFN
 	built bool
 }
 
@@ -43,68 +47,114 @@ func (o Options) Build() Options {
 		return o
 	}
 	o.built = true
+	o.fetch = fetchViaGoogleAPI
 
-	o.DatetimeFormats = append(o.DatetimeFormats, dateTimeFormats...)
+	o.DatetimeFormats = append(o.DatetimeFormats, dateTimeFormats[:]...)
 
 	return o
 }
 
-// ParseSheetIntoStructCb parses a sheet page and calls the callback for each object.
-func ParseSheetIntoStructCb[K any](options Options, cb func(K)) (err error) {
+// Result is a struct that holds the result of a parsing operation.
+// It contains the parsed value or an error if any.
+type Result[T any] struct {
+	Val T
+	Err error
+}
+
+// ParseSheetIntoStructs parses a sheet page and calls the callback for each object.
+func ParseSheetIntoStructs[T any](ctx context.Context, options Options) (iter.Seq2[int, Result[T]], error) {
+	results, _, err := parseSheet[T](ctx, options)
+	return results, err
+}
+
+// ParseSheetIntoStructSlice parses a sheet page and returns a slice of structs with the give type.
+func ParseSheetIntoStructSlice[T any](ctx context.Context, options Options) ([]T, error) {
+	results, rows, err := parseSheet[T](ctx, options)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]T, 0, rows)
+	for _, item := range results {
+		if item.Err != nil {
+			return nil, item.Err
+		}
+		items = append(items, item.Val)
+	}
+
+	return items, ctx.Err()
+}
+
+// ParseSheetIntoStructs parses a sheet page and calls the callback for each object.
+func parseSheet[T any](ctx context.Context, options Options) (iter.Seq2[int, Result[T]], int, error) {
 	if !options.built {
 		log.Println("googlesheetsparser: Warning: Using options that are not built")
 	}
 
 	// Set Params
-	var k K
-	spreadSheetId := options.SpreadsheetID
-	sheetName := pluralizeClient.Plural(reflect.TypeOf(k).Name())
+	refT := reflect.TypeFor[T]()
 	if options.SheetName != "" {
-		sheetName = options.SheetName
+		options.SheetName = pluralizeClient.Plural(refT.Name())
 	}
 
 	// Validate Params
-	if spreadSheetId == "" {
-		return ErrNoSpreadSheetID
+	if options.SpreadsheetID == "" {
+		return nil, 0, ErrNoSpreadSheetID
 	}
-	if sheetName == "" {
-		return ErrNoSheetName
-	}
-
-	resp, err := options.Service.Spreadsheets.Values.Get(spreadSheetId, sheetName).Do()
-	if err != nil {
-		return err
+	if options.SheetName == "" {
+		return nil, 0, ErrNoSheetName
 	}
 
-	mappings, err := createMappings[K](resp)
+	resp, err := options.fetch(ctx, options)
 	if err != nil {
-		return err
+		return nil, 0, err
+	}
+
+	mappings, err := createMappings(refT, resp.Values[0], options)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	fillEmptyValues(resp)
 
-	for rowIdx, row := range resp.Values[1:] {
-		var k K
-		for i := range mappings {
-			field := mappings[i]
-			val, err := reflectParseString(field.Type, row[i].(string), options.DatetimeFormats, rowIdx, i)
-			if err != nil {
-				return fmt.Errorf("%s: %s%d: %w", sheetName, getColumnName(i), rowIdx+2, err)
-			}
-			reflect.ValueOf(&k).Elem().FieldByName(field.Name).Set(val)
-		}
-		cb(k)
-	}
-	return nil
-}
+	return func(yield func(int, Result[T]) bool) {
+	rows:
+		for i, row := range resp.Values[1:] {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				rowIdx := i + 2 // 1-based index + first row is captions
+				var item T
+				refItem := reflect.ValueOf(&item).Elem()
+				for _, mapping := range mappings {
+					val, nonEmpty, err := mapping.convert(row[mapping.colIndex].(string), options.DatetimeFormats)
+					if err != nil {
+						err = fmt.Errorf("%s: %s%d: %w", options.SheetName, columnName(mapping.colIndex), rowIdx, err)
+						if !yield(rowIdx, Result[T]{Err: err}) {
+							return
+						}
 
-// ParseSheetIntoStructSlice parses a sheet page and returns a slice of structs with the give type.
-func ParseSheetIntoStructSlice[K any](options Options) ([]K, error) {
-	var res []K
-	err := ParseSheetIntoStructCb(options, func(k K) {
-		res = append(res, k)
-	})
-	return res, err
+						continue rows
+					}
+
+					if !nonEmpty {
+						continue
+					}
+
+					if mapping.initEmbedPtr != nil {
+						mapping.initEmbedPtr(refItem)
+					}
+
+					refItem.FieldByIndex(mapping.field.Index).Set(val)
+				}
+
+				if !yield(rowIdx, Result[T]{Val: item}) {
+					return
+				}
+			}
+		}
+	}, len(resp.Values[1:]), nil
 }
 
 func fillEmptyValues(data *sheets.ValueRange) {
@@ -122,201 +172,7 @@ func fillEmptyValues(data *sheets.ValueRange) {
 	}
 }
 
-func reflectParseString(pReflectType reflect.Type, cell string, dateTimeFormats []string, rowIdx, colIdx int) (reflect.Value, error) {
-	reflectType := pReflectType
-	var isPointer bool
-	isEmpty := cell == ""
-	if reflectType.Kind() == reflect.Pointer {
-		reflectType = reflectType.Elem()
-		isPointer = true
-	}
-	if isPointer && isEmpty {
-		return reflect.Zero(pReflectType), nil
-	}
-	switch reflectType.Kind() {
-	case reflect.String:
-		if isPointer {
-			return reflect.ValueOf(&cell), nil
-		}
-		return reflect.ValueOf(cell), nil
-	case reflect.Int:
-		i, err := strconv.Atoi(cell)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		if isPointer {
-			return reflect.ValueOf(&i), nil
-		}
-		return reflect.ValueOf(i), nil
-	case reflect.Int8:
-		i, err := strconv.ParseInt(cell, 10, 8)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := int8(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Int16:
-		i, err := strconv.ParseInt(cell, 10, 16)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := int16(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Int32:
-		i, err := strconv.ParseInt(cell, 10, 32)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := int32(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Int64:
-		i, err := strconv.ParseInt(cell, 10, 64)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := int64(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Uint:
-		i, err := strconv.ParseUint(cell, 10, 0)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := uint(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Uint8:
-		i, err := strconv.ParseUint(cell, 10, 8)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := uint8(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Uint16:
-		i, err := strconv.ParseUint(cell, 10, 16)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := uint16(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Uint32:
-		i, err := strconv.ParseUint(cell, 10, 32)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := uint32(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Uint64:
-		i, err := strconv.ParseUint(cell, 10, 64)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := uint64(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Float32:
-		i, err := strconv.ParseFloat(cell, 32)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := float32(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Float64:
-		i, err := strconv.ParseFloat(cell, 64)
-		if err != nil {
-			return reflect.ValueOf(0), err
-		}
-		res := float64(i)
-		if isPointer {
-			return reflect.ValueOf(&res), nil
-		}
-		return reflect.ValueOf(res), nil
-	case reflect.Bool:
-		i, err := strconv.ParseBool(cell)
-		if err != nil {
-			return reflect.ValueOf(false), err
-		}
-		if isPointer {
-			return reflect.ValueOf(&i), nil
-		}
-		return reflect.ValueOf(i), nil
-	case reflect.Struct:
-		if reflectType.String() == "time.Time" {
-			for _, dateTimeFormat := range dateTimeFormats {
-				t, err := time.Parse(dateTimeFormat, cell)
-				if err == nil {
-					if isPointer {
-						return reflect.ValueOf(&t), nil
-					}
-					return reflect.ValueOf(t), nil
-				}
-			}
-			return reflect.ValueOf(time.Time{}), fmt.Errorf("%w: %s", ErrInvalidDateTimeFormat, cell)
-		}
-	}
-	return reflect.ValueOf(nil), fmt.Errorf("%w: %s", ErrUnsupportedType, reflectType.Kind().String())
-}
-
-func createMappings[K any](data *sheets.ValueRange) (mappings []reflect.StructField, err error) {
-	firstRow := data.Values[0]
-	for colIdx, cellIf := range firstRow {
-		cell := cellIf.(string)
-		if cell == "" {
-			break
-		}
-		field := reflectGetFieldByTagOrName[K](cell)
-		if field == nil {
-			err = fmt.Errorf("%w: %s%d: %s", ErrFieldNotFoundInStruct, getColumnName(colIdx), 1, cell)
-			return
-		}
-		mappings = append(mappings, *field)
-	}
-	return
-}
-
-func reflectGetFieldByTagOrName[K any](name string) *reflect.StructField {
-	var k K
-	typeOfK := reflect.TypeOf(k)
-	for i := 0; i < typeOfK.NumField(); i++ {
-		field := typeOfK.Field(i)
-		if sheetName, ok := field.Tag.Lookup("sheets"); ok && sheetName == name {
-			return &field
-		}
-	}
-	if field, ok := typeOfK.FieldByName(name); ok {
-		return &field
-	}
-	return nil
-}
-
-func getColumnName(index int) string {
+func columnName(index int) string {
 	index += 1
 	var res string
 	for index > 0 {
@@ -325,4 +181,13 @@ func getColumnName(index int) string {
 		index /= 26
 	}
 	return strings.ToUpper(res)
+}
+
+type fetchFN func(ctx context.Context, cfg Options) (*sheets.ValueRange, error)
+
+func fetchViaGoogleAPI(ctx context.Context, cfg Options) (*sheets.ValueRange, error) {
+	return cfg.Service.Spreadsheets.Values.Get(cfg.SpreadsheetID, cfg.SheetName).
+		Context(ctx).
+		MajorDimension("ROWS").
+		Do()
 }
