@@ -67,10 +67,11 @@ jobs:
         auth: ${{ secrets.COVERAGE_GIST_SECRET }}
         gistID: b272dbf4526c9be75f7da96352873a71
         filename: gsheets-parser-coverage.json
+        style: flat
         namedLogo: Go
         label: Coverage
+        labelColor: rgb(45, 49, 54)
         message: ${{ steps.coverage.outputs.coverage-pct-1dp }}%
-        style: plastic
         valColorRange: ${{ steps.coverage.outputs.coverage-pct-1dp }}
         maxColorRange: 100
         minColorRange: 0

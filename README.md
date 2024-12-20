@@ -1,6 +1,7 @@
 # Google Sheets Parser
 
-[![license](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE.md) 
+[![license](https://img.shields.io/github/license/esome/google-sheets-parser?style=flat&label=License&labelColor=rgb(45%2C%2049%2C%2054)&color=rgb(113%2C%2016%2C%20126))](LICENSE.md) 
+[![release](https://img.shields.io/github/v/release/esome/google-sheets-parser?include_prereleases&sort=date&display_name=release&style=flat&label=Release&labelColor=rgb(45%2C%2049%2C%2054))](https://github.com/esome/google-sheets-parser/releases) 
 [![badge](https://github.com/esome/google-sheets-parser/workflows/CodeQL/badge.svg)](https://github.com/esome/google-sheets-parser/actions/workflows/github-code-scanning/codeql)
 [![badge](https://github.com/esome/google-sheets-parser/workflows/Go/badge.svg)](https://github.com/esome/google-sheets-parser/actions/workflows/go.yml)
 ![badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/sGy1980de/b272dbf4526c9be75f7da96352873a71/raw/gsheets-parser-coverage.json)
