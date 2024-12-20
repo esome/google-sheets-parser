@@ -70,7 +70,7 @@ jobs:
         namedLogo: Go
         label: Coverage
         message: ${{ steps.coverage.outputs.coverage-pct-1dp }}%
-        #color: ${{ steps.coverage.outputs.meets-threshold == 'true' && 'green' || 'red' }}
+        style: plastic
         valColorRange: ${{ steps.coverage.outputs.coverage-pct-1dp }}
         maxColorRange: 100
         minColorRange: 0
