@@ -1,5 +1,10 @@
 # Google Sheets Parser
 
+[![license](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE.md) 
+[![badge](https://github.com/esome/google-sheets-parser/workflows/CodeQL/badge.svg)](https://github.com/esome/google-sheets-parser/actions/workflows/github-code-scanning/codeql)
+[![badge](https://github.com/esome/google-sheets-parser/workflows/Go/badge.svg)](https://github.com/esome/google-sheets-parser/actions/workflows/go.yml)
+![badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/sGy1980de/b272dbf4526c9be75f7da96352873a71/raw/gsheets-parser-coverage.json)
+
 Google Sheets Parser is a library for dynamically parsing Google Sheets into Golang structs.
 
 ## Installation
