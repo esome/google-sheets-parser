@@ -31,6 +31,7 @@ jobs:
       # You may pin to the exact commit or the version.
       # uses: gwatts/go-coverage-action@2845595538a59d63d1bf55f109c14e104c6f7cb3
       uses: gwatts/go-coverage-action@v2.0.0
+      id: coverage
       with:
         # github token
         #token: # optional, default is ${{ github.token }}
